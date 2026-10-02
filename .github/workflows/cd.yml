@@ -1,0 +1,118 @@
+name: CD
+
+# Когда публикуем образ (и почему так):
+# - push тега vX.Y.Z — релиз. Тег ставится осознанно, после мержа в main;
+#   образ получает неизменяемые semver-теги X.Y.Z, X.Y, X и плавающий latest.
+# - push в main — каждый смерженный коммит превращается в образ для стейджинга:
+#   плавающий тег `main` + неизменяемый `sha-<short>` для точного отката.
+# - Pull request'ы образ НЕ публикуют: непроверенный код из форков не должен
+#   попадать в реестр (и секреты реестра форкам недоступны). Для PR образ
+#   только собирается и прогоняется e2e в CI.
+# - workflow_dispatch — ручной перезапуск публикации (например, после сбоя реестра).
+# Публикация всегда идёт после полного CI (reusable workflow) — образ из
+# непротестированного кода в реестр не попадает.
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: docker.io/${{ vars.DOCKERHUB_USERNAME }}/rl-arena
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Build & push image
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read version from pyproject.toml
+        id: version
+        run: |
+          version=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # Защита от рассинхрона: тег v1.2.3 обязан совпадать с версией пакета,
+      # иначе в реестре окажется образ 1.2.3, который на /api/v1/version
+      # отвечает чем-то другим.
+      - name: Tag must match package version
+        if: github.ref_type == 'tag'
+        run: |
+          if [ "${GITHUB_REF_NAME#v}" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} != pyproject version ${{ steps.version.outputs.version }}"
+            exit 1
+          fi
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=ref,event=branch
+            type=sha,format=short
+          flavor: |
+            latest=${{ github.ref_type == 'tag' }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.version.outputs.build_date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      # Проверяем то, что реально лежит в реестре: скачиваем образ по digest и
+      # убеждаемся, что он стартует и сообщает ожидаемые версию и коммит.
+      - name: Verify published image
+        run: |
+          set -euo pipefail
+          ref="${{ env.IMAGE }}@${{ steps.build.outputs.digest }}"
+          docker run -d --name published -p 8000:8000 "$ref"
+          for _ in $(seq 1 30); do curl -fsS localhost:8000/healthz && break; sleep 1; done
+          body=$(curl -fsS localhost:8000/api/v1/version)
+          echo "$body"
+          test "$(echo "$body" | jq -r .version)" = "${{ steps.version.outputs.version }}"
+          test "$(echo "$body" | jq -r .commit)" = "${{ github.sha }}"
+          docker rm -f published
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published \`${{ env.IMAGE }}\`"
+            echo "digest: \`${{ steps.build.outputs.digest }}\`"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
