@@ -1,4 +1,4 @@
-.PHONY: install hooks lint fmt typecheck test cov run migrate up down logs
+.PHONY: install lint fmt typecheck test test-real cov run migrate up down logs
 
 # Зависимости из lock-файла (группы web + dev) и git-хуки
 install:
@@ -19,6 +19,14 @@ typecheck:
 
 test:
 	uv run pytest -q
+
+# Те же тесты на настоящих Postgres и Redis из compose. Отдельная БД rl_arena_test
+# и Redis db 1 — тесты пересоздают схему и чистят Redis, данные приложения не трогаем.
+test-real:
+	docker compose up -d --wait postgres redis
+	docker compose exec postgres createdb -U postgres rl_arena_test 2>/dev/null || true
+	TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/rl_arena_test \
+		TEST_REDIS_URL=redis://localhost:6380/1 uv run pytest -q
 
 # Тесты с покрытием и HTML-отчётом в htmlcov/
 cov:
