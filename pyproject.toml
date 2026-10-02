@@ -1,0 +1,111 @@
+[project]
+name = "rl-arena"
+version = "0.1.0"
+description = "Платформа для обучения и эвала игровых RL-агентов: SFT по реплеям, лига с self-play и эксплоитерами, held-out эвал"
+readme = "README.md"
+authors = [
+    { name = "smirnolegov", email = "probasket119@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+# Зависимости разнесены по группам: `web` — рантайм сервиса (ставится в образ),
+# `dev` — линтеры, типизация, тесты (в образ НЕ попадает).
+[dependency-groups]
+web = [
+    "alembic>=1.14",
+    "asyncpg>=0.30",
+    "fastapi>=0.115",
+    "pydantic-settings>=2.6",
+    "redis>=5.2",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "uvicorn[standard]>=0.32",
+]
+dev = [
+    "aiosqlite>=0.22.1",
+    "asgi-lifespan>=2.1.0",
+    "fakeredis>=2.39.0",
+    "httpx>=0.28.1",
+    "mypy>=2.4.0",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.10",
+]
+
+[tool.uv]
+default-groups = ["web", "dev"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "N",     # pep8-naming
+    "B",     # flake8-bugbear
+    "ASYNC", # блокирующие вызовы внутри async-кода
+    "S",     # bandit: базовые проверки безопасности
+    "BLE",   # запрет голого `except Exception`
+    "ANN",   # аннотации типов
+    "SIM",   # упрощения
+    "PT",    # стиль pytest
+    "RUF",   # ruff-specific
+]
+ignore = [
+    "RUF001", # кириллица в строках — ложные срабатывания
+    "RUF002", # кириллица в docstring
+    "RUF003", # кириллица в комментариях
+    "B008",   # Depends()/Query() в дефолтах — идиома FastAPI
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "S101", "S311"]
+"migrations/**" = ["ANN"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rl_arena"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers"
+
+[tool.coverage.run]
+source = ["rl_arena"]
+branch = true
+# SQLAlchemy async работает через greenlet — без этого coverage теряет строки после await
+concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 90
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"

@@ -1,0 +1,69 @@
+# Установка хуков: `uv run pre-commit install`
+# Ручной прогон по всему репо: `uv run pre-commit run --all-files`
+# Тот же набор запускается в CI (job `lint`) — локально и в CI одни правила.
+default_language_version:
+  python: python3.13
+
+repos:
+  # Гигиена файлов: пробелы, переводы строк, размер, синтаксис конфигов, секреты
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: detect-private-key
+      - id: debug-statements
+
+  # Отступы и прочее по .editorconfig (в т.ч. табы в Makefile, 2 пробела в YAML)
+  - repo: https://github.com/editorconfig-checker/editorconfig-checker.python
+    rev: 3.11.1
+    hooks:
+      - id: editorconfig-checker
+        alias: ec
+
+  # Линтер и форматтер Python
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff-check
+        args: ["--fix", "--exit-non-zero-on-fix"]
+      - id: ruff-format
+
+  # uv.lock синхронизирован с pyproject.toml
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.12.22
+    hooks:
+      - id: uv-lock
+
+  # Линтер Dockerfile
+  - repo: https://github.com/AleksaC/hadolint-py
+    rev: v2.15.1
+    hooks:
+      - id: hadolint
+
+  # Валидация GitHub Actions workflow по JSON-схеме
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.38.2
+    hooks:
+      - id: check-github-workflows
+      - id: check-dependabot
+
+  # Типы: mypy из окружения проекта (видит все зависимости и pydantic-плагин)
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run --frozen mypy
+        language: system
+        types: [python]
+        pass_filenames: false

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Окружения
+.venv
+.env
+
+# Кеши инструментов
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Покрытие
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit.xml
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
