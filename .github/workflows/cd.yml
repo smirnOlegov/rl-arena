@@ -25,7 +25,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: docker.io/${{ vars.DOCKERHUB_USERNAME }}/rl-arena
+  # Логин Docker Hub можно задать и как variable, и как secret.
+  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
 
 jobs:
   ci:
@@ -37,6 +38,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Check registry credentials
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ]; then
+            echo "::error::Set DOCKERHUB_USERNAME (Settings → Secrets and variables → Actions)"
+            exit 1
+          fi
+          echo "IMAGE=docker.io/${DOCKERHUB_USERNAME}/rl-arena" >> "$GITHUB_ENV"
 
       - name: Read version from pyproject.toml
         id: version
@@ -74,7 +83,7 @@ jobs:
 
       - uses: docker/login-action@v4
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build & push

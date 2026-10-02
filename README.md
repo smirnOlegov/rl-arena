@@ -194,5 +194,5 @@ digest и проверяет, что он стартует и отдаёт ож�
 
 **Настройка репозитория** (Settings → Secrets and variables → Actions):
 
-- variable `DOCKERHUB_USERNAME` — логин/namespace на Docker Hub;
+- `DOCKERHUB_USERNAME` — логин/namespace на Docker Hub (variable или secret — подходят оба);
 - secret `DOCKERHUB_TOKEN` — access token Docker Hub (Account settings → Personal access tokens, права Read & Write).
