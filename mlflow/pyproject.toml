@@ -60,4 +60,3 @@ files = ["src"]
 [[tool.mypy.overrides]]
 module = ["mlflow.*", "sklearn.*", "kaggle_environments.*", "matplotlib.*"]
 ignore_missing_imports = true
-
