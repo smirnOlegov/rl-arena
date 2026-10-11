@@ -1,0 +1,126 @@
+# MLflow Tracking Server с отдельными хранилищами:
+#   postgres  backend store: эксперименты, runs, параметры, метрики, датасеты, registry
+#   s3        artifact store (RustFS, S3 API): модели, графики, parquet датасетов
+#   mlflow    сервер и UI, проксирует артефакты (--serve-artifacts), так что
+#             клиентам не нужны S3-креды, только MLFLOW_TRACKING_URI
+#   app       inference-сервис, профиль app
+#
+# Запуск: `make up`, UI на http://localhost:5000
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-s3-env: &s3-env
+  AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-mlflow}
+  AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-mlflow-secret}
+  MLFLOW_S3_ENDPOINT_URL: http://s3:9000
+  AWS_DEFAULT_REGION: us-east-1
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mlflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mlflow}
+      POSTGRES_DB: ${POSTGRES_DB:-mlflow}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *default-logging
+    restart: unless-stopped
+
+  s3:
+    image: rustfs/rustfs:1.0.1
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-mlflow}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-mlflow-secret}
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9000 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *default-logging
+    restart: unless-stopped
+
+  # Одноразовый сервис: создаёт бакет для артефактов и завершается.
+  s3-init:
+    image: mlflow-server:local
+    pull_policy: never
+    environment: *s3-env
+    command:
+      - python
+      - -c
+      - |
+        import os, boto3
+        s3 = boto3.client("s3", endpoint_url=os.environ["MLFLOW_S3_ENDPOINT_URL"])
+        names = {b["Name"] for b in s3.list_buckets().get("Buckets", [])}
+        if "mlflow" not in names:
+            s3.create_bucket(Bucket="mlflow")
+        print("bucket mlflow ready")
+    depends_on:
+      s3:
+        condition: service_healthy
+    logging: *default-logging
+    restart: "no"
+
+  mlflow:
+    image: mlflow-server:local
+    build:
+      context: docker
+      dockerfile: mlflow.Dockerfile
+    environment: *s3-env
+    command:
+      - mlflow
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      - --backend-store-uri=postgresql+psycopg://${POSTGRES_USER:-mlflow}:${POSTGRES_PASSWORD:-mlflow}@postgres:5432/${POSTGRES_DB:-mlflow}
+      - --artifacts-destination=s3://mlflow
+      - --serve-artifacts
+      - --allowed-hosts=localhost:*,127.0.0.1:*,mlflow:*
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+    logging: *default-logging
+    restart: unless-stopped
+
+  app:
+    profiles: ["app"]
+    image: farmvalue:local
+    build: .
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD: "false"
+      MODEL_NAME: ${MODEL_NAME:-kaggriculture-winprob}
+      MODEL_ALIAS: ${MODEL_ALIAS:-champion}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8080:8000"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    logging: *default-logging
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  s3-data:
