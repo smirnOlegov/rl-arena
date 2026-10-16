@@ -10,7 +10,7 @@ requires-python = ">=3.13"
 dependencies = []
 
 [build-system]
-requires = ["uv_build>=0.12.20,<0.13.0"]
+requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
 
 # Зависимости разнесены по группам: `web` — рантайм сервиса (ставится в образ),
@@ -18,11 +18,11 @@ build-backend = "uv_build"
 [dependency-groups]
 web = [
     "alembic>=1.14",
-    "asyncpg>=0.30",
-    "fastapi>=0.115",
+    "asyncpg>=0.32.0",
+    "fastapi>=0.143.0",
     "pydantic-settings>=2.6",
     "redis>=5.2",
-    "sqlalchemy[asyncio]>=2.1.1",
+    "sqlalchemy[asyncio]>=2.1.4",
     "uvicorn[standard]>=0.54.0",
 ]
 dev = [
@@ -31,11 +31,11 @@ dev = [
     "fakeredis>=2.39.0",
     "httpx>=0.28.1",
     "mypy>=2.4.0",
-    "pre-commit>=4.6.2",
+    "pre-commit>=4.7.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
-    "ruff>=0.16.10",
+    "ruff>=0.17.0",
 ]
 
 [tool.uv]
