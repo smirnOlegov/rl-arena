@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- builder: собираем venv только с рантайм-зависимостями (группа web) ----
-FROM python:3.13-slim-trixie AS builder
+FROM python:3.14-slim-trixie AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.19 /uv /bin/uv
 
@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-default-groups --group web --no-editable
 
 # ---- runtime: только интерпретатор + venv, без uv, компиляторов и исходников ----
-FROM python:3.13-slim-trixie AS runtime
+FROM python:3.14-slim-trixie AS runtime
 
 ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
