@@ -1,6 +1,6 @@
 # farmvalue
 
-MLflow-пайплайн для Kaggle-симуляции Kaggriculture. Реплеи партий превращаются в датасет, на нём обучается модель вероятности победы. Модель проходит через эксперименты и Model Registry и обслуживается сервисом `POST /process`. Отдельно агенты (два моих сабмита и публичные решения) версионируются как модели и сравниваются в round-robin.
+MLflow-пайплайн для Kaggle-симуляции Kaggriculture. Реплеи партий превращаются в датасет, на нём обучается модель вероятности победы. Модель проходит через эксперименты и Model Registry, а обслуживает её конвейер [`scoring`](../scoring/README.md): `POST /api/v1/tasks` и пакетный источник ставят задачи в RabbitMQ, воркер FastStream скорит их. Отдельно агенты (два моих сабмита и публичные решения) версионируются как модели и сравниваются в round-robin.
 
 ```
 реплеи Kaggriculture ──> dataset run (parquet + Dataset) ──> EDA run
@@ -12,7 +12,7 @@ MLflow-пайплайн для Kaggle-симуляции Kaggriculture. Репл
             Model Registry: kaggriculture-winprob v1..vN, @champion
                                    │ загрузка один раз на старте
                                    ▼
-                       FastAPI: POST /process
+                  scoring: воркер FastStream (../scoring)
 
 агенты ──> kaggriculture-agent v1..v8 ──> round-robin ──> реплеи ──> датасет v2
 ```
@@ -24,7 +24,6 @@ MLflow-пайплайн для Kaggle-симуляции Kaggriculture. Репл
 | `postgres` | Backend store: эксперименты, runs, параметры, метрики, теги, датасеты, LoggedModel, registry |
 | `s3` (RustFS, S3 API) | Artifact store, бакет `mlflow`: модели, графики, parquet |
 | `mlflow` | Tracking server и UI, `--serve-artifacts`: клиенты ходят за артефактами через сервер, S3-креды есть только у него |
-| `app` | Inference-сервис (профиль `app`) |
 
 Клиентам нужен только `MLFLOW_TRACKING_URI`. Сервер отдаёт артефакты по схеме `mlflow-artifacts:/...` и сам кладёт их в `s3://mlflow/...`. В `.env` стоят `MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD=false` и `..._UPLOAD=false`. Иначе MLflow 3 для S3 выдаёт клиенту presigned-ссылку на `http://s3:9000`, а этот адрес снаружи compose-сети недоступен.
 
@@ -63,7 +62,6 @@ make all
 | `make history` | старая лига проекта (`league/games*.jsonl`) как отдельный датасет |
 | `make dataset-v2` | датасет v2 (ladder + партии лиги) и лучший вариант на нём |
 | `make register` | baseline и два лучших run в реестр, `champion` и `challenger` |
-| `make app` | сервис на http://localhost:8080 |
 
 ## Данные
 
@@ -134,22 +132,9 @@ Round-robin на одном сиде со сменой мест (56 партий
 
 ## Сервис
 
-```bash
-make app
-curl -s localhost:8080/model
-curl -s -X POST localhost:8080/process -H 'content-type: application/json' \
-  -d '{"observations": [<observation из kaggle_environments>]}'
-```
+Синхронный `POST /process` заменён асинхронным `POST /api/v1/tasks` в соседнем проекте [`scoring`](../scoring/README.md). Модель там грузит воркер: на старте он разрешает `MODEL_NAME@MODEL_ALIAS` в номер версии через `farmvalue.service.model.load_from_registry` и загружает `models:/<name>/<version>` один раз. Загрузка идёт по номеру, а не по alias: если alias переставят во время загрузки, метаданные и веса всё равно совпадут. Версия модели пишется в каждый результат.
 
-На старте `lifespan` разрешает `MODEL_NAME@MODEL_ALIAS` в номер версии и грузит `models:/<name>/<version>` один раз. Загрузка идёт по номеру, а не по alias: если alias переставят между двумя вызовами, метаданные в ответе всё равно совпадут с весами. `/process` считает признаки и вызывает модель в `asyncio.to_thread`, чтобы не блокировать event loop. В ответе `win_prob_seat0`, `win_prob_player` (если в observation есть `player`) и блок `model` с версией, run_id и model_id. По нему видно, какая версия ответила.
-
-Переключение версии:
-
-```bash
-make promote VERSION=1
-make app-restart
-curl -s localhost:8080/model
-```
+Переключение версии: `make promote VERSION=1`, затем перезапуск воркеров `scoring`.
 
 ## Горячее обновление: проблемы и что лучше
 
