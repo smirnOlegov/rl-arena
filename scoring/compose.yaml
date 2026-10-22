@@ -1,0 +1,41 @@
+# RabbitMQ (Management UI на http://localhost:15672, guest/guest) и Postgres для результатов.
+# MLflow берётся из стека ../mlflow (`make up` там).
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    # Данные узла лежат в каталоге по его имени: без постоянного hostname
+    # пересозданный контейнер не увидит durable-очереди из тома
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: scoring
+      POSTGRES_PASSWORD: scoring
+      POSTGRES_DB: scoring
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scoring -d scoring"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  rabbitmq-data:
+  postgres-data:
