@@ -1,0 +1,79 @@
+[project]
+name = "scoring"
+version = "0.1.0"
+description = "Конвейер скоринга снимков Kaggriculture на FastStream и RabbitMQ с противодавлением"
+readme = "README.md"
+authors = [
+    { name = "smirnolegov", email = "probasket119@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "fastapi>=0.143.0",
+    "farmvalue",
+    "faststream[rabbit]>=0.7.7",
+    "mlflow-skinny>=3.17.0",
+    "pandas>=3.0.6",
+    "pydantic-settings>=2.15.0",
+    "scikit-learn>=1.9.1",
+    "skops>=0.16.0",
+    "sqlalchemy[asyncio]>=2.1.4",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+experiment = [
+    "httpx>=0.28.1",
+    "matplotlib>=3.11.2",
+    "psutil>=7.1.0",
+]
+dev = [
+    "asgi-lifespan>=2.1.0",
+    "httpx>=0.28.1",
+    "mypy>=2.4.0",
+    "pandas-stubs>=3.0.5.260914",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.0",
+    "testcontainers[postgres,rabbitmq]>=4.13.0",
+]
+
+[tool.uv]
+default-groups = ["experiment", "dev"]
+
+[tool.uv.sources]
+farmvalue = { path = "../mlflow", editable = true }
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "N", "B", "ASYNC", "S", "BLE", "ANN", "SIM", "PT", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003", "B008", "ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["scoring", "farmvalue"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["mlflow.*", "sklearn.*", "testcontainers.*", "psutil.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+addopts = "-ra --strict-markers"
