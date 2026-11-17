@@ -1,0 +1,82 @@
+apiVersion: 1
+
+# Обоснование порогов и for — в README, раздел «Алерты»
+
+groups:
+  - orgId: 1
+    name: scoring
+    folder: Конвейер
+    interval: 10s
+    rules:
+      - uid: queue-almost-full
+        title: Очередь заполнена больше чем на 90%
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # ready / x-max-length по каждой очереди, у которой приложение сообщает лимит.
+              # Под нагрузкой глубина — пила 75-100: источник после nack ждёт, очередь
+              # проседает. Поэтому берётся максимум за 30 с, а не мгновенное значение
+              expr: >-
+                max by (queue) (max_over_time(rabbitmq_detailed_queue_messages_ready[30s]))
+                / on (queue) max by (queue) (scoring_queue_max_length)
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.9]
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Очередь {{ $labels.queue }} заполнена на {{ humanizePercentage $values.A.Value }}"
+          description: >-
+            Воркеры не успевают за источником больше минуты. Источник уже замедлен
+            брокером, API отвечает 503. Проверить число воркеров и время inference.
+
+      - uid: dlq-not-empty
+        title: В DLQ есть сообщения
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: max by (queue) (rabbitmq_detailed_queue_messages{queue=~".+\\.dlq"})
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        for: 30s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "В {{ $labels.queue }} {{ $values.A.Value }} сообщений"
+          description: >-
+            Задачи, которые воркер не смог обработать DELIVERY_LIMIT + 1 раз. Сами они
+            не уйдут: найти в Loki по `"task moved to DLQ"`, разобрать и вернуть или удалить.

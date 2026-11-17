@@ -1,0 +1,9 @@
+apiVersion: 1
+
+providers:
+  - name: scoring
+    folder: Конвейер
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards

@@ -1,0 +1,29 @@
+global:
+  # RabbitMQ обновляет статистику очередей раз в 5 с, приложения шлют метрики с тем же шагом
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Метрики api, worker и source приходят по OTLP в Collector. job и instance в них —
+  # это service.name и service.instance.id, их нельзя перетирать адресом Collector
+  - job_name: otel-collector
+    honor_labels: true
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # Глубина и неподтверждённые сообщения по каждой очереди
+  - job_name: rabbitmq-queues
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics, queue_consumer_count]
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  # Агрегаты узла — это 3300 рядов (Erlang VM, Raft, каналы), дашборду нужна только память
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: rabbitmq_process_resident_memory_bytes
+        action: keep
