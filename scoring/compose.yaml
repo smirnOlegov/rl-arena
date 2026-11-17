@@ -109,7 +109,7 @@ services:
     restart: "no"
 
   rabbitmq:
-    image: rabbitmq:4.1-management-alpine
+    image: rabbitmq:4.1.8-management-alpine
     # Данные узла лежат в каталоге по его имени: без постоянного hostname
     # пересозданный контейнер не увидит durable-очереди из тома
     hostname: rabbitmq
@@ -127,7 +127,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17.11-alpine
     environment:
       POSTGRES_USER: scoring
       POSTGRES_PASSWORD: scoring
