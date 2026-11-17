@@ -31,6 +31,10 @@ class Settings(BaseSettings):
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
+    # Те же переменные читает OpenTelemetry SDK, здесь они нужны логам и самой настройке SDK
+    otel_service_name: str = "scoring"
+    otel_sdk_disabled: bool = False
+
 
 def get_settings() -> Settings:
     return Settings()

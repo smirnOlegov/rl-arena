@@ -2,6 +2,7 @@
 
 import gzip
 import json
+import logging
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -49,6 +50,16 @@ def rabbit_url() -> Iterator[str]:
         yield f"amqp://guest:guest@{host}:{port}/"
 
 
+@pytest.fixture(autouse=True)
+def restore_logging() -> Iterator[None]:
+    """create_app заменяет обработчики корневого логгера, а их поток закрывает capsys."""
+    root = logging.getLogger()
+    handlers, level = root.handlers[:], root.level
+    yield
+    root.handlers[:] = handlers
+    root.setLevel(level)
+
+
 @pytest.fixture
 def model() -> LoadedModel:
     info = ModelInfo(name="test", alias="champion", version="7", run_id="run", model_id=None)
@@ -61,6 +72,7 @@ def settings(postgres_url: str, request: pytest.FixtureRequest) -> Settings:
         database_url=postgres_url,
         queue_name=f"tasks-{request.node.name}",
         inference_delay_s=0.0,
+        otel_sdk_disabled=True,
     )
 
 

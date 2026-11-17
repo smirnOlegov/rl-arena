@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
 
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from sqlalchemy import DateTime, Enum, Float, String
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import (
@@ -38,7 +39,14 @@ class TaskRow(Base):
 
 
 def make_engine(url: str) -> AsyncEngine:
-    return create_async_engine(url, pool_pre_ping=True)
+    engine = create_async_engine(url, pool_pre_ping=True)
+    # Спан на каждый SQL-запрос. Инструментор — синглтон, а движок в процессе один;
+    # повторные вызовы из тестов и эксперимента он только предупреждал бы.
+    # Пакет объявляет поддержку SQLAlchemy < 2.1, но события движка в 2.1 те же
+    instrumentor = SQLAlchemyInstrumentor()
+    if not instrumentor.is_instrumented_by_opentelemetry:
+        instrumentor.instrument(engine=engine.sync_engine, skip_dep_check=True)
+    return engine
 
 
 def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

@@ -62,5 +62,12 @@ def load_from_registry(tracking_uri: str, name: str, alias: str) -> LoadedModel:
         model_id=logged_model_id(version.source),
     )
     predictor = load_model(f"models:/{name}/{info.version}")
-    log.info("loaded %s v%s (alias %s, run %s)", name, info.version, alias, info.run_id)
+    log.info(
+        "loaded %s v%s (alias %s, run %s)",
+        name,
+        info.version,
+        alias,
+        info.run_id,
+        extra={"model_name": name, "model_alias": alias, "model_version": info.version},
+    )
     return LoadedModel(info=info, predictor=predictor)

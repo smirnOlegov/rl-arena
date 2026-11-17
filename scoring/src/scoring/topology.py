@@ -1,12 +1,11 @@
 """Формат задачи и очереди RabbitMQ: ограниченная очередь задач и DLQ."""
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from faststream.rabbit import ExchangeType, QueueType, RabbitBroker, RabbitExchange, RabbitQueue
 from faststream.rabbit.schemas.queue import QuorumQueueArgs
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel
 
 from scoring.config import Settings
 
@@ -14,7 +13,8 @@ from scoring.config import Settings
 class Task(BaseModel):
     id: UUID
     observation: dict[str, Any]
-    enqueued_at: datetime
+    # Время без часового пояса нельзя вычесть из now(UTC): такую задачу отсекает валидация
+    enqueued_at: AwareDatetime
 
 
 def dead_letter_exchange(settings: Settings) -> RabbitExchange:

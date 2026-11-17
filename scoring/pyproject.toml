@@ -1,6 +1,6 @@
 [project]
 name = "scoring"
-version = "0.1.0"
+version = "0.2.0"
 description = "Конвейер скоринга снимков Kaggriculture на FastStream и RabbitMQ с противодавлением"
 readme = "README.md"
 authors = [
@@ -9,12 +9,18 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "asyncpg>=0.31.0",
-    "fastapi>=0.143.0",
     "farmvalue",
+    "fastapi>=0.143.0",
     "faststream[rabbit]>=0.7.7",
     "mlflow-skinny>=3.17.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+    "opentelemetry-instrumentation-fastapi>=0.66b2",
+    "opentelemetry-instrumentation-sqlalchemy>=0.66b2",
+    "opentelemetry-instrumentation-system-metrics>=0.66b2",
+    "opentelemetry-sdk>=1.45.2",
     "pandas>=3.0.6",
     "pydantic-settings>=2.15.0",
+    "python-json-logger>=4.2.0",
     "scikit-learn>=1.9.1",
     "skops>=0.16.0",
     "sqlalchemy[asyncio]>=2.1.4",
