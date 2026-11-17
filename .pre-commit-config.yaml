@@ -50,6 +50,8 @@ repos:
     rev: v2.15.1
     hooks:
       - id: hadolint
+        # Dockerfile.dockerignore — не Dockerfile, но identify считает его таким по имени
+        exclude: \.dockerignore$
 
   # Валидация GitHub Actions workflow по JSON-схеме
   - repo: https://github.com/python-jsonschema/check-jsonschema
