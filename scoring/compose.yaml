@@ -1,7 +1,113 @@
-# RabbitMQ (Management UI на http://localhost:15672, guest/guest) и Postgres для результатов.
-# MLflow берётся из стека ../mlflow (`make up` там).
+# Конвейер: api, worker, source, RabbitMQ (UI на http://localhost:15672, guest/guest), Postgres.
+# MLflow берётся из стека ../mlflow (`make up` там): `down -v` здесь не должен стирать реестр.
+#
+#   docker compose up -d                              только приложение, логи в stdout
+#   docker compose --profile observability up -d      плюс логи, трейсы, метрики и Grafana
+#   docker compose run --rm source --limit 6000       пакет из реплеев
+#   docker compose up -d --scale worker=2             второй воркер
+
+include:
+  - observability/compose.yaml
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app: &app
+  image: scoring:local
+  build:
+    context: ..
+    dockerfile: scoring/Dockerfile
+  environment: &app-env
+    RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+    DATABASE_URL: postgresql+asyncpg://scoring:scoring@postgres:5432/scoring
+    QUEUE_NAME: ${QUEUE_NAME:-tasks}
+    QUEUE_MAX_LENGTH: ${QUEUE_MAX_LENGTH:-100}
+    DELIVERY_LIMIT: ${DELIVERY_LIMIT:-3}
+    PREFETCH_COUNT: ${PREFETCH_COUNT:-4}
+    WORKER_THREADS: ${WORKER_THREADS:-4}
+    INFERENCE_DELAY_S: ${INFERENCE_DELAY_S:-0.2}
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    # Сколько ждать Collector на одну отправку. Python SDK читает значение в секундах,
+    # хотя спецификация говорит о миллисекундах. Без Collector источник иначе ждёт 10 с
+    # на каждый сигнал при выходе, пока досылает буферы
+    OTEL_EXPORTER_OTLP_TIMEOUT: "3"
+    OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER:-parentbased_always_on}
+    OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
+    OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:-5000}
+    OTEL_RESOURCE_ATTRIBUTES: service.version=${APP_VERSION:-0.2.0},deployment.environment.name=${DEPLOY_ENV:-local}
+    # host.name — hostname контейнера, то есть его ID из `docker ps`
+    OTEL_EXPERIMENTAL_RESOURCE_DETECTORS: host
+    # Метрики FastAPI по стабильной семантике: http.server.request.duration в секундах
+    OTEL_SEMCONV_STABILITY_OPT_IN: http
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  logging: *default-logging
 
 services:
+  api:
+    <<: *app
+    command: ["uvicorn", "--factory", "scoring.api:create_app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: scoring-api
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    <<: *app
+    command: ["uvicorn", "--factory", "scoring.worker:create_app", "--host", "0.0.0.0", "--port", "8001", "--no-access-log"]
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: scoring-worker
+      # Хост mlflow указывает на опубликованный порт MLflow на хосте; такое имя есть
+      # в --allowed-hosts сервера, а host.docker.internal там нет
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD: "false"
+      MLFLOW_DISABLE_AGENT_HINT: "1"
+      MODEL_NAME: ${MODEL_NAME:-kaggriculture-winprob}
+      MODEL_ALIAS: ${MODEL_ALIAS:-champion}
+      OMP_NUM_THREADS: "1"
+    extra_hosts:
+      - "mlflow:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 60s
+    # FastStream ждёт задачи в работе до GRACEFUL_TIMEOUT_S=30 с, docker по умолчанию — только 10
+    stop_grace_period: 40s
+    restart: unless-stopped
+
+  # Пакетный процесс: `up` его не запускает, только `docker compose run --rm source`
+  source:
+    <<: *app
+    entrypoint: ["python", "-m", "scoring.source"]
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: scoring-source
+      REPLAYS: /data/replays
+    volumes:
+      - ${REPLAYS_DIR:-../mlflow/data/league/replays}:/data/replays:ro
+    scale: 0
+    restart: "no"
+
   rabbitmq:
     image: rabbitmq:4.1-management-alpine
     # Данные узла лежат в каталоге по его имени: без постоянного hostname
@@ -17,6 +123,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    logging: *default-logging
     restart: unless-stopped
 
   postgres:
@@ -34,6 +141,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    logging: *default-logging
     restart: unless-stopped
 
 volumes:
