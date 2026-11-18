@@ -1,0 +1,43 @@
+# Логи контейнеров этого compose-проекта -> Loki.
+# Строка лога уходит как есть; из JSON берутся только лейблы потока.
+
+sources:
+  docker:
+    type: docker_logs
+    include_labels:
+      - com.docker.compose.project=${COMPOSE_PROJECT}
+
+transforms:
+  labels:
+    type: remap
+    inputs: [docker]
+    source: |
+      record, err = parse_json(.message)
+      if err != null || !is_object(record) {
+        record = {}
+      }
+      # У api, worker и source это OTEL_SERVICE_NAME, как service.name в трейсах.
+      # У RabbitMQ, Postgres и самого стека — имя сервиса в compose
+      .service = record.service || .label."com.docker.compose.service" || "unknown"
+      .level = downcase(string(record.level) ?? "unknown")
+      .env = "${DEPLOY_ENV}"
+
+sinks:
+  loki:
+    type: loki
+    inputs: [labels]
+    endpoint: http://loki:3100
+    encoding:
+      codec: text
+    # Только поля с несколькими значениями. task_id и trace_id остаются внутри строки:
+    # лейбл с уникальным значением на каждую задачу — это отдельный поток на задачу
+    labels:
+      service: "{{ service }}"
+      level: "{{ level }}"
+      env: "{{ env }}"
+    structured_metadata:
+      container: "{{ container_name }}"
+    out_of_order_action: accept
+    # Loki может подняться позже Vector или упасть; логи ждут в буфере и в json-file докера
+    healthcheck:
+      enabled: false

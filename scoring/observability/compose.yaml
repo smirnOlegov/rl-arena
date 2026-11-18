@@ -1,0 +1,142 @@
+# Стек наблюдаемости. Подключается из ../compose.yaml через include, у каждого сервиса
+# есть профиль, поэтому обычный `docker compose up` его не запускает:
+#
+#   --profile logs           Vector + Loki
+#   --profile traces         OTel Collector + Tempo
+#   --profile metrics        OTel Collector + Prometheus
+#   --profile observability  всё вместе и Grafana на http://localhost:3000
+#
+# Приложение о хранилищах не знает: логи пишет в stdout, трейсы и метрики шлёт по OTLP
+# в Collector. Лимиты памяти в сумме 1.4 ГБ, разбивка в README.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_VERSION:-0.130.0}
+    profiles: [traces, metrics, observability]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    mem_limit: 192m
+    logging: *default-logging
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:${TEMPO_VERSION:-2.8.2}
+    profiles: [traces, observability]
+    command: ["-config.file=/etc/tempo.yaml"]
+    # GOMEMLIMIT ниже лимита контейнера: сборщик мусора Go начинает работать раньше OOM killer
+    environment:
+      GOMEMLIMIT: 200MiB
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3200/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:${LOKI_VERSION:-3.5.7}
+    profiles: [logs, observability]
+    command: ["-config.file=/etc/loki.yaml"]
+    environment:
+      GOMEMLIMIT: 200MiB
+    volumes:
+      - ./loki.yaml:/etc/loki.yaml:ro
+      - loki-data:/loki
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+    restart: unless-stopped
+
+  vector:
+    image: timberio/vector:${VECTOR_VERSION:-0.48.0-alpine}
+    profiles: [logs, observability]
+    command: ["--config", "/etc/vector/vector.yaml"]
+    environment:
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-scoring}
+      DEPLOY_ENV: ${DEPLOY_ENV:-local}
+    volumes:
+      - ./vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    mem_limit: 128m
+    logging: *default-logging
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.5.0}
+    profiles: [metrics, observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
+      - --enable-feature=exemplar-storage
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    mem_limit: 320m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *default-logging
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-12.1.1}
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/pipeline.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    mem_limit: 256m
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+    restart: unless-stopped
+
+volumes:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  grafana-data:

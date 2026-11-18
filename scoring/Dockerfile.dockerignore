@@ -1,0 +1,10 @@
+# Контекст — весь rl-arena; в образ нужны только исходники scoring и farmvalue
+*
+!scoring/pyproject.toml
+!scoring/uv.lock
+!scoring/README.md
+!scoring/src
+!mlflow/pyproject.toml
+!mlflow/README.md
+!mlflow/src
+**/__pycache__

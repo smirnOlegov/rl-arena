@@ -3,7 +3,6 @@
 #   s3        artifact store (RustFS, S3 API): модели, графики, parquet датасетов
 #   mlflow    сервер и UI, проксирует артефакты (--serve-artifacts), так что
 #             клиентам не нужны S3-креды, только MLFLOW_TRACKING_URI
-#   app       inference-сервис, профиль app
 #
 # Запуск: `make up`, UI на http://localhost:5000
 
@@ -100,24 +99,6 @@ services:
         condition: service_healthy
       s3-init:
         condition: service_completed_successfully
-    logging: *default-logging
-    restart: unless-stopped
-
-  app:
-    profiles: ["app"]
-    image: farmvalue:local
-    build: .
-    environment:
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD: "false"
-      MODEL_NAME: ${MODEL_NAME:-kaggriculture-winprob}
-      MODEL_ALIAS: ${MODEL_ALIAS:-champion}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    ports:
-      - "8080:8000"
-    depends_on:
-      mlflow:
-        condition: service_healthy
     logging: *default-logging
     restart: unless-stopped
 

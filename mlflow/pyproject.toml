@@ -1,7 +1,7 @@
 [project]
 name = "farmvalue"
 version = "0.1.0"
-description = "MLflow-пайплайн для Kaggriculture: датасет из реплеев, модель вероятности победы, реестр агентов и inference-сервис"
+description = "MLflow-пайплайн для Kaggriculture: датасет из реплеев, модель вероятности победы и реестр агентов"
 readme = "README.md"
 authors = [
     { name = "smirnolegov", email = "probasket119@gmail.com" }
@@ -28,13 +28,11 @@ ml = [
     "pyarrow>=25.0.1",
 ]
 serve = [
-    "fastapi>=0.143.0",
     "mlflow-skinny>=3.17.0",
     "pandas>=3.0.6",
     "pydantic-settings>=2.15.0",
     "scikit-learn>=1.9.1",
     "skops>=0.16.0",
-    "uvicorn[standard]>=0.54.0",
 ]
 
 [tool.uv]

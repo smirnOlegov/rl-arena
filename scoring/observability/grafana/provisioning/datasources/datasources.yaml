@@ -1,0 +1,47 @@
+apiVersion: 1
+
+# `$$` экранирует `$`: без него Grafana при provisioning подставит переменную окружения
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 5s
+      # Exemplar на графике латентности ведёт в трейс этого запроса
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # trace_id из JSON-строки становится ссылкой на трейс
+      derivedFields:
+        - name: trace_id
+          matcherRegex: '"trace_id": "(\w+)"'
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+          urlDisplayLabel: Открыть трейс
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      # Из спана: логи всего трейса по всем сервисам, а не только сервиса спана
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        customQuery: true
+        query: '{env=~".+"} |= "$${__trace.traceId}"'
+      nodeGraph:
+        enabled: true

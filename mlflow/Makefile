@@ -1,5 +1,5 @@
 .PHONY: install lint fmt typecheck up down logs dataset dataset-v2 eda train register promote show \
-	agents league history app app-restart app-logs all reset
+	agents league history all reset
 
 RUN = uv run --env-file .env
 SEEDS ?= 6
@@ -62,20 +62,10 @@ dataset-v2:
 	$(RUN) python -m farmvalue.dataset v2
 	$(RUN) python -m farmvalue.train --dataset v2 --variant hgb_tuned
 
-# Inference-сервис в docker; перезапуск подхватывает текущий alias
-app:
-	docker compose --profile app up -d --build --wait app
-
-app-restart:
-	docker compose --profile app restart app
-
-app-logs:
-	docker compose --profile app logs -f app
-
-# Весь путь с нуля: данные, EDA, эксперименты, лига, v2, реестр, сервис
-all: up dataset eda train league history dataset-v2 register app
+# Весь путь с нуля: данные, EDA, эксперименты, лига, v2, реестр
+all: up dataset eda train league history dataset-v2 register
 
 # Удалить все данные MLflow (тома postgres и s3) и локальные реплеи лиги
 reset:
-	docker compose --profile app down -v
+	docker compose down -v
 	rm -rf data
